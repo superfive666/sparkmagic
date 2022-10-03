@@ -1,9 +1,3 @@
-import re
-import itertools
-from collections import OrderedDict
-from enum import Enum
-from functools import partial
-
 """
 Creates a HTML table from Spark's Dataframe default string representation
 
@@ -21,16 +15,22 @@ Into:
     1	cat
     2	mouse
     3	horse
-    
+
     <table>
         <tbody>
             <tr><th>id</th><th>animal</th></tr>
-            <tr><td>1</td><td>cat</td>
-            </tr><tr><td>2</td><td>mouse</td><
-            /tr><tr><td>3</td><td>horse</td></tr>
+            <tr><td>1</td><td>cat</td></tr>
+            <tr><td>2</td><td>mouse</td></tr>
+            <tr><td>3</td><td>horse</td></tr>
         </tbody>
     </table>
 """
+
+import re
+
+from collections import OrderedDict
+from enum import Enum
+from functools import partial
 
 
 header_top_pattern = r"[ \t\f\v]*(?P<header_top>\+[-+]*\+)[\n\r]?"
@@ -82,7 +82,7 @@ def extractors(header_top, header_content):
     header_pluses = re.finditer(r"\+", header_top)
 
     def _extract(l, r, row, offset=0):
-        return row[offset + l : offset + r].strip()
+        return row[offset + l: offset + r].strip()
 
     def _extractor_iter():
         start = next(header_pluses)
@@ -127,6 +127,7 @@ def cell_components_iter(cell):
     """
     if not cell:
         return
+
     df_spans = dataframe_pattern_r.finditer(cell)
     if cell_contains_dataframe(cell):
         df_start, df_end = next(df_spans).span()
@@ -158,20 +159,21 @@ class CellOutputHtmlParser:
 
     @staticmethod
     def to_html(output):
-        return "<br />".join(
-            [
-                CellOutputHtmlParser.to_html_component(c, output)
-                for c in cell_components_iter(output)
-            ]
-        )
+        return "<br />".join([
+            CellOutputHtmlParser.to_html_component(c, output)
+            for c in cell_components_iter(output)
+        ])
 
     @staticmethod
-    def to_html_component(component_span, cell):
+    def to_html_component(component_span, cell) -> str:
         component_type, start, end = component_span
+
         if component_type == CellComponentType.DF:
             return DataframeHtmlParser(cell, start, end).to_table()
         elif component_type == CellComponentType.TEXT:
-            return "<pre>%s</pre>" % cell[start:end].strip()
+            return f"<pre>{cell[start:end].strip()}</pre>"
+
+        return ""
 
 
 class DataframeHtmlParser:
@@ -223,7 +225,7 @@ class DataframeHtmlParser:
         )
         start = self.content_span[0]
         for row_delimiter in row_delimiters:
-            end, next_start = row_delimiter.span()[0], row_delimiter.span()[1]
+            end, next_start = row_delimiter.start(), row_delimiter.end()
             yield (start, end)
             start = next_start
 
@@ -232,32 +234,46 @@ class DataframeHtmlParser:
 
         Defaults to converting a row to a dict {colName: value}
         """
-        _transform = transform or (
+
+        transform = transform or (
             lambda r: {col: x(r) for col, x in self.extractors.items()}
         )
+
         for rowspan in self._rowspan_iter():
             row = self._cell_span(rowspan).strip()
-            if len(row) != self.expected_width:
-                raise ValueError(
-                    """Expected DF rows to be uniform width (%d)
-                                 but found %s (%d)"""
-                    % (self.expected_width, row, len(row))
-                )
-            yield _transform(row)
 
-    def to_table(self):
+            if len(row) != self.expected_width:
+                # extract using the default deliminter of spark DF output
+                yield self._split_extract(row)
+                continue
+
+            yield transform(row)
+
+    def to_table(self) -> str:
         """Converts the contents of a notebook cell to a HTML table."""
 
         header_content = self._cell_span(self.header_content_span)
         table_header_html = self._to_tr(header_content.strip(), is_header=True)
 
         table_row_iter = self.row_iter(transform=self._to_tr)
-        table_body = "".join([r for r in table_row_iter])
-        return "<table>%s%s</table>" % (table_header_html, table_body)
+        table_body = "".join(list(table_row_iter))
+
+        return f"<table>{table_header_html}{table_body}</table>"
+
+    def _split_extract(self, row: str) -> str:
+        tag = "td"
+        row_content = row.split("|")
+        row_content = [r.strip() for r in row_content][1:-1]
+
+        row_html = "".join([f"<{tag}>{rc}</{tag}>" for rc in row_content])
+
+        return f"<tr>{row_html}</tr>"
 
     def _to_tr(self, row, is_header=False):
         """Converts a spark dataframe row to a HTML row."""
+
         tag = "th" if is_header else "td"
         row_content = [x(row) for x in self.extractors.values()]
-        row_html = "".join(["<%s>%s</%s>" % (tag, rc, tag) for rc in row_content])
-        return "<tr>%s</tr>" % row_html
+        row_html = "".join([f"<{tag}>{rc}</{tag}>" for rc in row_content])
+
+        return f"<tr>{row_html}</tr>"
