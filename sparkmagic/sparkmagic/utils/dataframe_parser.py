@@ -28,10 +28,10 @@ Into:
 
 import re
 
-from collections import OrderedDict
 from enum import Enum
 from functools import partial
-
+from typing import Iterator
+from collections import OrderedDict
 
 header_top_pattern = r"[ \t\f\v]*(?P<header_top>\+[-+]*\+)[\n\r]?"
 header_content_pattern = r"[ \t\f\v]*(?P<header_content>\|.*\|)[\n\r]"
@@ -191,19 +191,19 @@ class DataframeHtmlParser:
                     DataframeHtmlParser can only parse table headers/rows for a
                     a single dataframe in the substring cell[start:end]
         """
+
         self.cell_contents = cell
         end = end or len(self.cell_contents)
-        header_spans = DataframeHtmlParser.header_top_r.finditer(
-            self.cell_contents, start, end
-        )
+        header_spans = DataframeHtmlParser.header_top_r.finditer(self.cell_contents, start, end)
         parts = {
             "header_top": next(header_spans).span(),
-            "header_content": DataframeHtmlParser.header_content_r.search(
-                self.cell_contents, start, end
-            ).span(),
+            "header_content": DataframeHtmlParser.header_content_r
+                                                 .search(self.cell_contents, start, end)
+                                                 .span(),  # pyright: ignore
             "header_bottom": next(header_spans).span(),
             "footer": next(header_spans).span(),
         }
+
         self.header_content_span = parts["header_content"]
         header_content = self._cell_span(self.header_content_span)
 
@@ -211,6 +211,7 @@ class DataframeHtmlParser:
 
         header_top = self._cell_span(parts["header_top"])
         self.extractors = extractors(header_top.strip(), header_content.strip())
+
         # The content is between the header-bottom and the footer
         self.content_span = (parts["header_bottom"][1], parts["footer"][0])
 
@@ -229,7 +230,25 @@ class DataframeHtmlParser:
             yield (start, end)
             start = next_start
 
-    def row_iter(self, transform=None):
+    def _split_extract(self, row: str) -> str:
+        tag = "td"
+        row_content = row.split("|")
+        row_content = [r.strip() for r in row_content][1:-1]
+
+        row_html = "".join([f"<{tag}>{rc}</{tag}>" for rc in row_content])
+
+        return f"<tr>{row_html}</tr>"
+
+    def _to_tr(self, row, is_header=False):
+        """Converts a spark dataframe row to a HTML row."""
+
+        tag = "th" if is_header else "td"
+        row_content = [x(row) for x in self.extractors.values()]
+        row_html = "".join([f"<{tag}>{rc}</{tag}>" for rc in row_content])
+
+        return f"<tr>{row_html}</tr>"
+
+    def row_iter(self, transform=None) -> Iterator:
         """Extract and transform each row from a Dataframe.
 
         Defaults to converting a row to a dict {colName: value}
@@ -259,21 +278,3 @@ class DataframeHtmlParser:
         table_body = "".join(list(table_row_iter))
 
         return f"<table>{table_header_html}{table_body}</table>"
-
-    def _split_extract(self, row: str) -> str:
-        tag = "td"
-        row_content = row.split("|")
-        row_content = [r.strip() for r in row_content][1:-1]
-
-        row_html = "".join([f"<{tag}>{rc}</{tag}>" for rc in row_content])
-
-        return f"<tr>{row_html}</tr>"
-
-    def _to_tr(self, row, is_header=False):
-        """Converts a spark dataframe row to a HTML row."""
-
-        tag = "th" if is_header else "td"
-        row_content = [x(row) for x in self.extractors.values()]
-        row_html = "".join([f"<{tag}>{rc}</{tag}>" for rc in row_content])
-
-        return f"<tr>{row_html}</tr>"
