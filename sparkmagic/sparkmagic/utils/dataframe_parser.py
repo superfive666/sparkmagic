@@ -244,7 +244,12 @@ class DataframeHtmlParser:
 
         tag = "th" if is_header else "td"
         row_content = [x(row) for x in self.extractors.values()]
-        row_html = "".join([f"<{tag}>{rc}</{tag}>" for rc in row_content])
+        row_html = "".join(
+            [
+                f'<{tag}><pre style="word-break: unset; background-color: unset;">{rc}</pre></{tag}>'
+                for rc in row_content
+            ]
+        )
 
         return f"<tr>{row_html}</tr>"
 
