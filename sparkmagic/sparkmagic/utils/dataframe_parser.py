@@ -230,12 +230,20 @@ class DataframeHtmlParser:
             yield (start, end)
             start = next_start
 
+    def _apply_style(self, content: str) -> str:
+        if "<pre" in content or "</pre>" in content:
+            # already applied text coding style
+            return content
+
+        # standardize the coding style based on the jupyter spark magic
+        return f"""<pre style="word-break: unset; background-color: unset;">{content}</pre>"""
+
     def _split_extract(self, row: str) -> str:
         tag = "td"
         row_content = row.split("|")
         row_content = [r.strip() for r in row_content][1:-1]
 
-        row_html = "".join([f"<{tag}>{rc}</{tag}>" for rc in row_content])
+        row_html = "".join([f"<{tag}>{self._apply_style(rc)}</{tag}>" for rc in row_content])
 
         return f"<tr>{row_html}</tr>"
 
@@ -244,12 +252,7 @@ class DataframeHtmlParser:
 
         tag = "th" if is_header else "td"
         row_content = [x(row) for x in self.extractors.values()]
-        row_html = "".join(
-            [
-                f'<{tag}><pre style="word-break: unset; background-color: unset;">{rc}</pre></{tag}>'
-                for rc in row_content
-            ]
-        )
+        row_html = "".join([f"<{tag}>{self._apply_style(rc)}</{tag}>" for rc in row_content])
 
         return f"<tr>{row_html}</tr>"
 
