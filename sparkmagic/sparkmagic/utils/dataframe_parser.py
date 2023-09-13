@@ -235,8 +235,10 @@ class DataframeHtmlParser:
             # already applied text coding style
             return content
 
+        sanitized_content = content.replace("<", "&lt;").replace(">", "&gt;")
+
         # standardize the coding style based on the jupyter spark magic
-        return f"""<pre style="word-break: unset; background-color: unset;">{content}</pre>"""
+        return f"""<pre style="word-break: unset; background-color: unset;">{sanitized_content}</pre>"""
 
     def _split_extract(self, row: str) -> str:
         tag = "td"
@@ -284,6 +286,5 @@ class DataframeHtmlParser:
 
         table_row_iter = self.row_iter(transform=self._to_tr)
         table_body = "".join(list(table_row_iter))
-        meme = """<img width="78" height="52" src="https://asset.kompas.com/crops/Qd60OGZ5Zrqjxj6jDxubj_qQSQ4=/118x41:609x368/750x500/data/photo/2021/09/26/61505cf88cb31.jpeg" alt="Yao Ming.">"""
 
-        return f"{meme}<table>{table_header_html}{table_body}</table>"
+        return f"<table>{table_header_html}{table_body}</table>"
